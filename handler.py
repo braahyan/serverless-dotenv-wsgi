@@ -1,19 +1,38 @@
-from http_lambda_helpers import respond
+import logging
+import boto3
+from flask import Flask, request
+from flask_restful import Resource, Api, reqparse
+from datetime import datetime
 
 
-def hello(event, context):
-    body = {
-        "message": "Go Serverless v1.0! Your function executed successfully!",
-        "input": event
-    }
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
-    return respond(body)
+app = Flask(__name__)
+api = Api(app)
 
-    # Use this code if you don't use the http event with the LAMBDA-PROXY
-    # integration
-    """
-    return {
-        "message": "Go Serverless v1.0! Your function executed successfully!",
-        "event": event
-    }
-    """
+publish_parser = reqparse.RequestParser()
+publish_parser.add_argument('AccountId', required=True,
+                            help='Account Id is required')
+
+
+class HelloWorld(Resource):
+    def __init__(self, **kwargs):
+        self.dynamodb = kwargs["dynamodb"]
+        self.table = self.dynamodb.Table('devBiStream')
+
+    def post(self):
+        args = publish_parser.parse_args()
+        self.table.put_item(
+            Item={
+                'AccountId': args['AccountId'],
+                'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'Body': request.get_json()
+            }
+        )
+        return "success"
+
+
+api.add_resource(HelloWorld, '/rest',
+                 resource_class_kwargs={'dynamodb':
+                                        boto3.resource('dynamodb')})
