@@ -1,4 +1,5 @@
-import json
+from http_lambda_helpers import respond
+
 
 def hello(event, context):
     body = {
@@ -6,14 +7,10 @@ def hello(event, context):
         "input": event
     }
 
-    response = {
-        "statusCode": 200,
-        "body": json.dumps(body)
-    }
+    return respond(body)
 
-    return response
-
-    # Use this code if you don't use the http event with the LAMBDA-PROXY integration
+    # Use this code if you don't use the http event with the LAMBDA-PROXY
+    # integration
     """
     return {
         "message": "Go Serverless v1.0! Your function executed successfully!",
