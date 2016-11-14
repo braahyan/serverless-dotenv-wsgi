@@ -11,11 +11,14 @@ provider:
 
 plugins:
   - serverless-wsgi
+  - serverless-plugin-dotenv
 
 custom:
   streamName: ${opt:stage, self:provider.stage}BiStream
   wsgi:
     app: handler.app
+  dotenv:
+    STREAM_NAME: ${self:custom.streamName}
 
 functions:
   api:
