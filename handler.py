@@ -24,7 +24,7 @@ publish_parser.add_argument('AccountId', required=True,
 class HelloWorld(Resource):
     def __init__(self, **kwargs):
         self.dynamodb = kwargs["dynamodb"]
-        self.table = self.dynamodb.Table(os.environ.get("STREAM_NAME"))
+        self.table = self.dynamodb.Table(os.environ.get("TABLE_NAME"))
 
     def post(self):
         args = publish_parser.parse_args()
