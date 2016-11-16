@@ -17,28 +17,29 @@ plugins:
   - serverless-plugin-dotenv
 
 custom:
-  tableName: ${opt:stage, self:provider.stage}BiStream
   wsgi:
     app: handler.app
   dotenv:
-    TABLE_NAME: ${self:custom.tableName}
+    TABLE_NAME: ${file(sensitive.yml):tableName}
+    TWILIO_ACCOUNT_SID: ${file(sensitive.yml):twilioAccountSid}
+    TWILIO_AUTH_TOKEN: ${file(sensitive.yml):twilioAuthToken}
 
 functions:
   api:
     handler: wsgi.handler
     events:
       - http:
-          path: rest
+          path: phone_number/list
+          method: get
+      - http:
+          path: phone_number/list
           method: post
       - http:
-          path: sns
-          method: post
-  consumer:
-    handler: consumer.handler
-    events:
-      - sns: 
-        Ref: Topic
-      - schedule: rate(1 minute)
+          path: phone_number
+          method: get
+      - http:
+          path: phone_number/{sid}
+          method: delete
 
 resources:
   Resources:
@@ -46,179 +47,12 @@ resources:
       Type: "AWS::DynamoDB::Table"
       Properties: 
         AttributeDefinitions: 
-          - AttributeName: "AccountId"
-            AttributeType: "S"
-          - AttributeName: "Timestamp"
+          - AttributeName: "PhoneNumber"
             AttributeType: "S"
         KeySchema: 
-          - AttributeName: "AccountId"
+          - AttributeName: "PhoneNumber"
             KeyType: "HASH"
-          - AttributeName: "Timestamp"
-            KeyType: "RANGE"
         ProvisionedThroughput: 
           ReadCapacityUnits: "5"
           WriteCapacityUnits: "5"
-        TableName: ${self:custom.tableName}
-        StreamSpecification: 
-            StreamViewType: NEW_AND_OLD_IMAGES
-    FunctionTopicSubscription:
-      Type: AWS::Lambda::Function
-      DependsOn:
-      - LambdaExecutionRole
-      Properties:
-        Handler: index.handler
-        Role:
-          Fn::GetAtt:
-          - LambdaExecutionRole
-          - Arn
-        Code:
-          ZipFile:
-            Fn::Join:
-            - "\n"
-            - - var response = require('cfn-response');
-              - exports.handler = function(event, context) {
-              - "  console.log('REQUEST RECEIVED:\\n', JSON.stringify(event));"
-              - "  var responseData = {};"
-              - "  if (event.RequestType == 'Delete') {"
-              - "    var subscriptionArn = event.PhysicalResourceId;"
-              - "    var aws = require('aws-sdk');"
-              - "    var sns = new aws.SNS();"
-              - "    sns.unsubscribe({SubscriptionArn: subscriptionArn}, function(err,
-                data) {"
-              - "      if (err) {"
-              - "          responseData = {Error: 'Failed to unsubscribe from SNS Topic'};"
-              - "          response.send(event, context, response.FAILED, responseData);"
-              - "      } else {"
-              - "          response.send(event, context, response.SUCCESS, data, data.SubscriptionArn);"
-              - "      }"
-              - "    });"
-              - "    return;"
-              - "  }"
-              - "  if (event.RequestType == 'Create' || event.RequestType == 'Update')
-                {"
-              - "    var topicArn = event.ResourceProperties.TopicArn;"
-              - "    var endpoint = event.ResourceProperties.Endpoint;"
-              - "    var protocol = event.ResourceProperties.Protocol;"
-              - "    if (topicArn && endpoint && protocol) {"
-              - "      var aws = require('aws-sdk');"
-              - "      var sns = new aws.SNS();"
-              - "      sns.subscribe({TopicArn: topicArn, Endpoint: endpoint, Protocol:
-                protocol}, function(err, data) {"
-              - "        if (err) {"
-              - "          responseData = {Error: 'Failed to subscribe to SNS Topic'};"
-              - "          console.log(responseData.Error + ':\\n', err);"
-              - "          response.send(event, context, response.FAILED, responseData);"
-              - "        } else {"
-              - "          response.send(event, context, response.SUCCESS, data, data.SubscriptionArn);"
-              - "        }"
-              - "      });"
-              - "    } else {"
-              - "      responseData = {Error: 'Missing one of required arguments'};"
-              - "      console.log(responseData.Error);"
-              - "      response.send(event, context, response.FAILED, responseData);"
-              - "    }"
-              - "  }"
-              - "};"
-        Runtime: nodejs
-        Timeout: '30'
-    LambdaExecutionRole:
-      Type: AWS::IAM::Role
-      Properties:
-        AssumeRolePolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-              - lambda.amazonaws.com
-            Action:
-            - sts:AssumeRole
-        Path: "/"
-        Policies:
-        - PolicyName: DescribeStack
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-            - Effect: Allow
-              Action:
-              - logs:CreateLogGroup
-              - logs:CreateLogStream
-              - logs:PutLogEvents
-              Resource: arn:aws:logs:*:*:*
-            - Effect: Allow
-              Action:
-              - sns:Subscribe
-              - sns:Unsubscribe
-              Resource:
-                Ref: Topic
-    Topic:
-      Type: AWS::SNS::Topic
-      Properties:
-        TopicName: ${self:custom.tableName}
-    Queue:
-      Type: AWS::SQS::Queue
-      Properties: 
-        QueueName: ${self:custom.tableName}
-    SqsSubscription:
-      Type: Custom::TopicSubscription
-      DependsOn:
-      - FunctionTopicSubscription
-      Properties:
-        ServiceToken:
-          Fn::GetAtt:
-          - FunctionTopicSubscription
-          - Arn
-        TopicArn:
-          Ref: Topic
-        Endpoint:
-          Fn::GetAtt:
-          - Queue
-          - Arn
-        Protocol: sqs
-    LambdaSubscription:
-      Type: Custom::TopicSubscription
-      DependsOn:
-      - FunctionTopicSubscription
-      - ConsumerLambdaFunction
-      Properties:
-        ServiceToken:
-          Fn::GetAtt:
-          - FunctionTopicSubscription
-          - Arn
-        TopicArn:
-          Ref: Topic
-        Endpoint:
-          Fn::GetAtt:
-          - ConsumerLambdaFunction
-          - Arn
-        Protocol: lambda
-    MyQueuePolicy:
-      Type: AWS::SQS::QueuePolicy
-      Properties:
-        PolicyDocument:
-          Version: '2012-10-17'
-          Id: MyQueuePolicy
-          Statement:
-          - Sid: Allow-SendMessage-To-Both-Queues-From-SNS-Topic
-            Effect: Allow
-            Principal: "*"
-            Action:
-            - sqs:SendMessage
-            Resource: "*"
-            Condition:
-              ArnEquals:
-                aws:SourceArn:
-                  Ref: Topic
-        Queues:
-        - Ref: Queue
-    LambdaInvokePermission: 
-      Type: "AWS::Lambda::Permission"
-      Properties: 
-        FunctionName: 
-          Fn::GetAtt: 
-            - "ConsumerLambdaFunction"
-            - "Arn"
-        Action: "lambda:InvokeFunction"
-        Principal: "sns.amazonaws.com"
-        SourceArn: 
-          Ref: Topic
+        TableName: ${file(sensitive.yml):tableName}
