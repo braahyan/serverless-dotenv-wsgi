@@ -8,9 +8,6 @@ provider:
       Resource: "*"
       Action:
         - "dynamodb:*"
-        - "sqs:*"
-        - "sns:*"
-        - "sts:*"
 
 plugins:
   - serverless-wsgi
@@ -20,9 +17,10 @@ custom:
   wsgi:
     app: handler.app
   dotenv:
-    TABLE_NAME: ${file(sensitive.yml):tableName}
+    PHONE_MAPPING_TABLE_NAME: ${file(sensitive.yml):tableName}
     TWILIO_ACCOUNT_SID: ${file(sensitive.yml):twilioAccountSid}
     TWILIO_AUTH_TOKEN: ${file(sensitive.yml):twilioAuthToken}
+    VOICE_RESPONSE_URL: ${file(sensitive.yml):voiceResponseUrl}
 
 functions:
   api:
@@ -40,6 +38,9 @@ functions:
       - http:
           path: phone_number/{sid}
           method: delete
+      - http:
+          path: phone_number/respond
+          method: get
 
 resources:
   Resources:

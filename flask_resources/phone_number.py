@@ -1,7 +1,10 @@
 from twilio.rest import TwilioRestClient
+import twilio.twiml
 from flask_restful import Resource, reqparse, fields, marshal_with
-from flask import request
+from flask import request, make_response
+import boto3
 import os
+import logging
 
 
 client = TwilioRestClient()
@@ -26,6 +29,10 @@ phone_number_fields = {
     "phone_number": fields.String()
 }
 
+dynamodb = boto3.resource("dynamodb")
+phone_mapping_table = dynamodb.Table(
+    os.environ.get("PHONE_MAPPING_TABLE_NAME"))
+
 
 class PhoneNumber(Resource):
     def __init__(self, **kwargs):
@@ -35,8 +42,12 @@ class PhoneNumber(Resource):
     def get(self):
         return client.phone_numbers.list()
 
-    def delete(self, sid):
-        client.phone_numbers.delete(sid)
+    def put(self, phone_number):
+        print os.environ.get("PHONE_MAPPING_TABLE_NAME")
+        phone_mapping_table.put_item(Item={
+            "PhoneNumber": phone_number,
+            "MappedNumber": request.get_json()["map_to"]
+        })
         return '', 204
 
 
@@ -64,3 +75,23 @@ class PhoneNumberList(Resource):
             voice_method="GET"
         )
         return number
+
+
+class PhoneNumberRespond(Resource):
+    def __init__(self, **kwargs):
+        pass
+
+    def get(self):
+        to_number = request.args['To']
+        response = phone_mapping_table.get_item(
+            Key={
+                'PhoneNumber': to_number
+            }
+        )
+        print response
+        item = response['Item']
+        resp = twilio.twiml.Response()
+        resp.dial(item['MappedNumber'])
+        # we do this to force the xml response
+        # twilio doesn't send accept headers
+        return make_response(str(resp), 200)
