@@ -9,6 +9,11 @@ provider:
       Action:
         - "dynamodb:*"
 
+package:
+  exclude:
+    - node_modules/**
+    - venv
+
 plugins:
   - serverless-wsgi
   - serverless-plugin-dotenv
@@ -17,10 +22,12 @@ custom:
   wsgi:
     app: handler.app
   dotenv:
-    PHONE_MAPPING_TABLE_NAME: ${file(sensitive.yml):tableName}
+    PHONE_MAPPING_TABLE_NAME: ${file(sensitive.yml):phoneMappingTableName}
+    PHONE_RECORD_TABLE_NAME: ${file(sensitive.yml):phoneRecordTableName}
     TWILIO_ACCOUNT_SID: ${file(sensitive.yml):twilioAccountSid}
     TWILIO_AUTH_TOKEN: ${file(sensitive.yml):twilioAuthToken}
     VOICE_RESPONSE_URL: ${file(sensitive.yml):voiceResponseUrl}
+    STATUS_CALLBACK_URL: ${file(sensitive.yml):statusCallbackUrl}
 
 functions:
   api:
@@ -36,15 +43,21 @@ functions:
           path: phone_number
           method: get
       - http:
-          path: phone_number/{sid}
+          path: phone_number/{phone_number}
+          method: put
+      - http:
+          path: phone_number/{phone_number}
           method: delete
       - http:
           path: phone_number/respond
           method: get
+      - http:
+          path: phone_number/record
+          method: post
 
 resources:
   Resources:
-    myDynamoDBTable: 
+    phoneMappingTable: 
       Type: "AWS::DynamoDB::Table"
       Properties: 
         AttributeDefinitions: 
@@ -56,4 +69,21 @@ resources:
         ProvisionedThroughput: 
           ReadCapacityUnits: "5"
           WriteCapacityUnits: "5"
-        TableName: ${file(sensitive.yml):tableName}
+        TableName: ${file(sensitive.yml):phoneMappingTableName}
+    phoneRecordTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties: 
+        AttributeDefinitions: 
+          - AttributeName: "PhoneNumber"
+            AttributeType: "S"
+          - AttributeName: "Timestamp"
+            AttributeType: "S"
+        KeySchema: 
+          - AttributeName: "PhoneNumber"
+            KeyType: "HASH"
+          - AttributeName: "Timestamp"
+            KeyType: "RANGE"
+        ProvisionedThroughput: 
+          ReadCapacityUnits: "5"
+          WriteCapacityUnits: "5"
+        TableName: ${file(sensitive.yml):phoneRecordTableName}
